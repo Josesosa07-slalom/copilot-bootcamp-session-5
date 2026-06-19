@@ -25,7 +25,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import './App.css';
 
 // INTENTIONAL ISSUE: API_URL should use environment variable or relative URL
-const API_URL = 'http://localhost:3001/api/todos';
+const API_URL = '/api/todos';
 
 // React Query hook for fetching todos
 const useTodos = () => {
@@ -42,10 +42,12 @@ const useTodos = () => {
 
 function App() {
   const [newTodoTitle, setNewTodoTitle] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const queryClient = useQueryClient();
 
   // Fetch todos using React Query
-  const { data: todos = [], isLoading } = useTodos();
+  const { data: todos = [], isLoading, error } = useTodos();
 
   // Mutation for adding a new todo
   const addTodoMutation = useMutation({
@@ -79,12 +81,27 @@ function App() {
   // INTENTIONAL ISSUE: Delete mutation not implemented
   const deleteTodoMutation = useMutation({
     mutationFn: async (id) => {
-      // TODO: Implement delete functionality
-      console.log('Delete todo:', id);
-      // Missing: await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+      await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['todos'] });
+    },
+  });
+
+  // Edit mutation for updating todo title
+  const editTodoMutation = useMutation({
+    mutationFn: async ({ id, title }) => {
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['todos'] });
+      setEditingId(null);
+      setEditingTitle('');
     },
   });
 
@@ -104,7 +121,21 @@ function App() {
   };
 
   // INTENTIONAL ISSUE: Edit functionality not implemented
-  // const handleEditTodo = (id, newTitle) => { ... }
+  const handleEditTodo = (id, currentTitle) => {
+    setEditingId(id);
+    setEditingTitle(currentTitle);
+  };
+
+  const handleSaveEdit = (id) => {
+    if (editingTitle.trim()) {
+      editTodoMutation.mutate({ id, title: editingTitle });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingTitle('');
+  };
 
   return (
     <Box
@@ -160,6 +191,16 @@ function App() {
           </CardContent>
         </Card>
 
+        {error && (
+          <Card sx={{ mb: 3, bgcolor: 'error.light' }}>
+            <CardContent>
+              <Typography variant="body1" color="error.contrastText">
+                Error loading todos. Please try again later.
+              </Typography>
+            </CardContent>
+          </Card>
+        )}
+
         {isLoading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
             <CircularProgress />
@@ -167,10 +208,20 @@ function App() {
         )}
 
         {/* INTENTIONAL ISSUE: No empty state message when todos.length === 0 */}
+        {!isLoading && todos.length === 0 && (
+          <Card>
+            <CardContent>
+              <Typography variant="body1" color="text.secondary" align="center">
+                No todos yet. Add one above to get started!
+              </Typography>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <List sx={{ p: 0 }}>
-            {todos.map((todo, index) => (
+        {!isLoading && todos.length > 0 && (
+          <Card>
+            <List sx={{ p: 0 }}>
+              {todos.map((todo, index) => (
               <ListItem
                 key={todo.id}
                 sx={{
@@ -186,20 +237,38 @@ function App() {
                   onChange={() => handleToggleTodo(todo.id)}
                   sx={{ mr: 2 }}
                 />
-                <Typography
-                  sx={{
-                    flex: 1,
-                    textDecoration: todo.completed ? 'line-through' : 'none',
-                    color: todo.completed ? 'text.secondary' : 'text.primary',
-                  }}
-                >
-                  {todo.title}
-                </Typography>
+                {editingId === todo.id ? (
+                  <TextField
+                    fullWidth
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveEdit(todo.id);
+                      } else if (e.key === 'Escape') {
+                        handleCancelEdit();
+                      }
+                    }}
+                    autoFocus
+                    size="small"
+                    sx={{ mr: 2 }}
+                  />
+                ) : (
+                  <Typography
+                    sx={{
+                      flex: 1,
+                      textDecoration: todo.completed ? 'line-through' : 'none',
+                      color: todo.completed ? 'text.secondary' : 'text.primary',
+                    }}
+                  >
+                    {todo.title}
+                  </Typography>
+                )}
                 <Stack direction="row" spacing={1}>
                   <IconButton
                     size="small"
                     color="primary"
-                    onClick={() => console.log('Edit not implemented')}
+                    onClick={() => handleEditTodo(todo.id, todo.title)}
                   >
                     <EditIcon />
                   </IconButton>
@@ -215,11 +284,18 @@ function App() {
             ))}
           </List>
         </Card>
+        )}
 
         {/* INTENTIONAL ISSUE: Stats always show 0 instead of calculating from todos */}
         <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center', gap: 2 }}>
-          <Chip label={`${0} items left`} color="primary" />
-          <Chip label={`${0} completed`} color="success" />
+          <Chip 
+            label={`${todos.filter(t => !t.completed).length} items left`} 
+            color="primary" 
+          />
+          <Chip 
+            label={`${todos.filter(t => t.completed).length} completed`} 
+            color="success" 
+          />
         </Box>
       </Container>
     </Box>
